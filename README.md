@@ -304,5 +304,5 @@ type Product struct {
 - **`json:"-"` fields** are completely skipped, even if they carry `schema` tags.
 - **Unexported fields** are always skipped.
 - **`json:",omitempty"`** — the JSON name is parsed correctly (`name,omitempty` → key `name`).
-- **All validation errors are collected** — `Validate` never stops at the first failure.
-- **`multipleOf` uses ratio-based float comparison** (`n/factor` near integer) to avoid `math.Mod` precision issues with values like `0.3` vs `0.1`.
+- **Consistent Errors**: `ParseJSON` and `ValidateJSON` convert standard library JSON errors (like `UnmarshalTypeError` or `SyntaxError`) into `ValidationErrors` so you can handle them uniformly.
+- **`multipleOf` uses ratio-based float comparison** (`n/factor` near integer) to avoid `math.Mod` precision issues.

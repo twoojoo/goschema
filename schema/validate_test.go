@@ -236,6 +236,72 @@ func TestMustValidateJSON_Panics(t *testing.T) {
 	schema.MustValidateJSON[User]([]byte(`{"name":"X"}`))
 }
 
+func TestParseJSON_TypeMismatch(t *testing.T) {
+	// Age is int, but we send a string
+	data := []byte(`{"name":"Alice","email":"alice@example.com","age":"thirty"}`)
+	_, err := schema.ParseJSON[User](data)
+
+	ve, ok := err.(schema.ValidationErrors)
+	if !ok {
+		t.Fatalf("expected ValidationErrors for type mismatch, got %T: %v", err, err)
+	}
+
+	if !ve.Has("age") {
+		t.Error("expected error for field 'age'")
+	}
+	if !strings.Contains(ve.Error(), "expected type int") {
+		t.Errorf("expected error message to contain 'expected type int', got: %v", ve.Error())
+	}
+}
+
+func TestParseJSON_SyntaxError(t *testing.T) {
+	// 1. Truncated JSON
+	data := []byte(`{"name": "Alice", "email": "invalid-json"`) // missing closing brace
+	_, err := schema.ParseJSON[User](data)
+
+	ve, ok := err.(schema.ValidationErrors)
+	if !ok {
+		t.Fatalf("expected ValidationErrors for truncated JSON, got %T: %v", err, err)
+	}
+	if !strings.Contains(ve[0].Message, "unexpected end of input") {
+		t.Errorf("expected 'unexpected end of input' message, got: %s", ve[0].Message)
+	}
+
+	// 2. Malformed Syntax
+	data2 := []byte(`{"name": "Alice",, "email": "bob@example.com"}`) // double comma
+	_, err2 := schema.ParseJSON[User](data2)
+
+	ve2, ok2 := err2.(schema.ValidationErrors)
+	if !ok2 {
+		t.Fatalf("expected ValidationErrors for malformed syntax, got %T: %v", err2, err2)
+	}
+	if !strings.Contains(ve2[0].Message, "invalid JSON syntax") {
+		t.Errorf("expected 'invalid JSON syntax' message, got: %s", ve2[0].Message)
+	}
+}
+
+type StrictUser struct {
+	_    any    `schema:"additionalProperties=false"`
+	Name string `json:"name"`
+}
+
+func TestParseJSON_UnknownField(t *testing.T) {
+	data := []byte(`{"name": "Alice", "unknown": "field"}`)
+	_, err := schema.ParseJSON[StrictUser](data)
+
+	ve, ok := err.(schema.ValidationErrors)
+	if !ok {
+		t.Fatalf("expected ValidationErrors for unknown field, got %T: %v", err, err)
+	}
+
+	if !ve.Has("unknown") {
+		t.Error("expected error for field 'unknown'")
+	}
+	if !strings.Contains(ve.Error(), "unknown field \"unknown\"") {
+		t.Errorf("expected 'unknown field' message, got: %v", ve.Error())
+	}
+}
+
 // ---- MustValidate ----
 
 func TestMustValidate_Panics(t *testing.T) {

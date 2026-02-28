@@ -3,8 +3,11 @@ package schema
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"reflect"
+	"strings"
 )
 
 // Validate checks a struct value against its `schema` struct tags.
@@ -113,7 +116,7 @@ func ParseJSON[T any](data []byte) (T, error) {
 		dec.DisallowUnknownFields()
 	}
 	if err := dec.Decode(&v); err != nil {
-		return v, fmt.Errorf("goschema: parse error: %w", err)
+		return v, wrapUnmarshalError(err)
 	}
 
 	// Apply defaults to zero-value fields before validation.
@@ -159,6 +162,54 @@ func MustValidateJSON[T any](data []byte) {
 	if err := ValidateJSON[T](data); err != nil {
 		panic("goschema: MustValidateJSON failed: " + err.Error())
 	}
+}
+
+// wrapUnmarshalError converts standard library JSON errors into our ValidationErrors type.
+func wrapUnmarshalError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// 1. Type Mismatch (e.g. string sent for int field)
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return ValidationErrors{{
+			Field:   typeErr.Field,
+			Message: fmt.Sprintf("expected type %s", typeErr.Type.String()),
+			Value:   typeErr.Value,
+		}}
+	}
+
+	// 2. Syntax Error (malformed JSON)
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return ValidationErrors{{
+			Field:   "",
+			Message: fmt.Sprintf("invalid JSON syntax at offset %d: %s", syntaxErr.Offset, syntaxErr.Error()),
+		}}
+	}
+
+	// 3. Unknown Field (from DisallowUnknownFields)
+	// Example message: "json: unknown field \"xxx\""
+	if strings.HasPrefix(err.Error(), "json: unknown field") {
+		msg := strings.TrimPrefix(err.Error(), "json: ")
+		field := ""
+		fmt.Sscanf(msg, "unknown field %q", &field)
+		return ValidationErrors{{
+			Field:   field,
+			Message: msg,
+		}}
+	}
+
+	// 4. Unexpected EOF (truncated JSON)
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+		return ValidationErrors{{
+			Field:   "",
+			Message: "invalid JSON: unexpected end of input",
+		}}
+	}
+
+	return err
 }
 
 // ---- JSON Schema emitter ----
