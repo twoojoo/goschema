@@ -1,6 +1,8 @@
 package schema_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -229,6 +231,33 @@ func TestToJSONSchema(t *testing.T) {
 	}
 	if _, ok := props["email"]; !ok {
 		t.Error("expected 'email' in properties")
+	}
+}
+
+func TestToJSONSchemaIndent(t *testing.T) {
+	b, err := schema.ToJSONSchemaIndent[User]("", "  ")
+	assertNoError(t, err)
+
+	// Check if it's valid JSON and contains expected content.
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("failed to unmarshal indented JSON: %v", err)
+	}
+
+	if m["type"] != "object" {
+		t.Errorf("expected type=object, got %v", m["type"])
+	}
+
+	// Crude check for indentation: it should contain a newline and spaces.
+	if !bytes.Contains(b, []byte("\n  ")) {
+		t.Error("expected indented JSON to contain newline and spaces")
+	}
+}
+
+func TestMustToJSONSchemaIndent(t *testing.T) {
+	b := schema.MustToJSONSchemaIndent[User]("", "\t")
+	if !bytes.Contains(b, []byte("\t")) {
+		t.Error("expected indented JSON to contain tab character")
 	}
 }
 

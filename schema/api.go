@@ -70,6 +70,25 @@ func ToJSONSchema[T any]() (map[string]any, error) {
 	return objectSchemaToJSON(obj), nil
 }
 
+// ToJSONSchemaIndent is like ToJSONSchema but returns the schema as indented
+// JSON bytes.
+func ToJSONSchemaIndent[T any](prefix, indent string) ([]byte, error) {
+	m, err := ToJSONSchema[T]()
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(m, prefix, indent)
+}
+
+// MustToJSONSchemaIndent is like ToJSONSchemaIndent but panics on error.
+func MustToJSONSchemaIndent[T any](prefix, indent string) []byte {
+	b, err := ToJSONSchemaIndent[T](prefix, indent)
+	if err != nil {
+		panic("goschema: MustToJSONSchemaIndent failed: " + err.Error())
+	}
+	return b
+}
+
 // Parse unmarshals JSON data into a value of type T and validates it against
 // the struct's `schema` tags. It is the idiomatic entry-point combining
 // json.Unmarshal, default-filling, and Validate in a single call.

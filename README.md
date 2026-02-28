@@ -111,8 +111,23 @@ Returns a **JSON Schema (draft-07)** compatible `map[string]any` for type `T`. T
 
 ```go
 js, err := schema.ToJSONSchema[User]()
-out, _ := json.MarshalIndent(js, "", "  ")
-fmt.Println(string(out))
+```
+
+### `ToJSONSchemaIndent[T any](prefix, indent string) ([]byte, error)`
+
+Like `ToJSONSchema` but returns the schema as indented JSON bytes.
+
+```go
+b, _ := schema.ToJSONSchemaIndent[User]("", "  ")
+fmt.Println(string(b))
+```
+
+### `MustToJSONSchemaIndent[T any](prefix, indent string) []byte`
+
+Like `ToJSONSchemaIndent` but panics on error.
+
+```go
+b := schema.MustToJSONSchemaIndent[User]("", "  ")
 ```
 
 ---
