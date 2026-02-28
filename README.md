@@ -14,9 +14,9 @@ type User struct {
     Meta  map[string]string `json:"meta"   schema:"maxProperties=10"`
 }
 
-user, err := schema.Parse[User](jsonBytes)   // unmarshal + defaults + validate
-schema.MustValidate(user)                    // panic on violation
-js, _  := schema.ToJSONSchema[User]()        // derive JSON Schema map
+user, err := schema.ParseJSON[User](jsonBytes) // unmarshal + defaults + validate
+schema.MustValidate(user)                   // panic on violation
+js, _  := schema.ToJSONSchema[User]()       // derive JSON Schema map
 ```
 
 ---
@@ -49,7 +49,7 @@ type Product struct {
 
 func main() {
     // Parse JSON, apply defaults, then validate — all in one call
-    p, err := schema.Parse[Product]([]byte(`{"name":"Widget","price":9.99}`))
+    p, err := schema.ParseJSON[Product]([]byte(`{"name":"Widget","price":9.99}`))
     if err != nil {
         // err is a schema.ValidationErrors — inspect it directly
         for _, ve := range err.(schema.ValidationErrors) {
@@ -86,23 +86,40 @@ Like `Validate` but **panics** on any failure. Use in `init()`, test fixtures, o
 schema.MustValidate(defaultConfig) // panics if config is invalid
 ```
 
-### `Parse[T any](data []byte) (T, error)`
+### `ParseJSON[T any](data []byte) (T, error)`
 
-Combines three steps in one call:
-1. `json.Unmarshal` — deserialise JSON
-2. **Apply defaults** — fill zero-value fields with `default=` tag values
-3. `Validate` — check all constraints
+The idiomatic entry-point: combines `json.Unmarshal`, default-value filling, and validation in a single call.
 
 ```go
-user, err := schema.Parse[User](jsonBytes)
+user, err := schema.ParseJSON[User](jsonBytes)
 ```
 
-### `MustParse[T any](data []byte) T`
+**`Parse`** is available as a legacy alias.
 
-Like `Parse[T]` but panics on unmarshal or validation failure.
+### `ValidateJSON[T any](data []byte) error`
+
+Like `ParseJSON` but discards the resulting object. Useful if you only need to check validity.
 
 ```go
-cfg := schema.MustParse[Config]([]byte(`{"env":"prod"}`))
+err := schema.ValidateJSON[User](data)
+```
+
+### `MustParseJSON[T any](data []byte) T`
+
+Like `ParseJSON` but panics on unmarshal or validation failure.
+
+```go
+cfg := schema.MustParseJSON[Config]([]byte(`{"env":"prod"}`))
+```
+
+**`MustParse`** is available as a legacy alias.
+
+### `MustValidateJSON[T any](data []byte)`
+
+Like `ValidateJSON` but panics on failure.
+
+```go
+schema.MustValidateJSON[User](data)
 ```
 
 ### `ToJSONSchema[T any]() (map[string]any, error)`

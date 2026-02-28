@@ -165,11 +165,11 @@ func TestNested_Valid(t *testing.T) {
 	assertNoError(t, schema.Validate(u))
 }
 
-// ---- Parse[T] ----
+// ---- ParseJSON[T] ----
 
 func TestParse_Valid(t *testing.T) {
 	data := []byte(`{"name":"Alice","email":"alice@example.com","age":30,"tags":["go"],"address":{"street":"Via Roma 1","city":"Rome"}}`)
-	u, err := schema.Parse[User](data)
+	u, err := schema.ParseJSON[User](data)
 	assertNoError(t, err)
 	if u.Name != "Alice" {
 		t.Errorf("expected Name=Alice, got %q", u.Name)
@@ -177,7 +177,7 @@ func TestParse_Valid(t *testing.T) {
 }
 
 func TestParse_InvalidJSON(t *testing.T) {
-	_, err := schema.Parse[User]([]byte(`{not json}`))
+	_, err := schema.ParseJSON[User]([]byte(`{not json}`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -185,21 +185,55 @@ func TestParse_InvalidJSON(t *testing.T) {
 
 func TestParse_ValidationFails(t *testing.T) {
 	data := []byte(`{"name":"A","email":"bad","age":30,"tags":["go"],"address":{"street":"Via Roma 1","city":"Rome"}}`)
-	_, err := schema.Parse[User](data)
+	_, err := schema.ParseJSON[User](data)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
 }
 
-// ---- MustParse[T] ----
+// ---- MustParseJSON[T] ----
 
-func TestMustParse_Panics(t *testing.T) {
+func TestMustParseJSON_Panics(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error("expected MustParse to panic on invalid input")
+			t.Error("expected MustParseJSON to panic on invalid input")
 		}
 	}()
-	schema.MustParse[User]([]byte(`{"name":"X"}`)) // too short + missing required fields
+	schema.MustParseJSON[User]([]byte(`{"name":"X"}`)) // too short + missing required fields
+}
+
+// ---- ValidateJSON ----
+
+func TestValidateJSON(t *testing.T) {
+	data := []byte(`{
+		"name": "Alice",
+		"email": "alice@example.com",
+		"age": 30,
+		"tags": ["go"],
+		"address": {
+			"street": "Via Roma 1",
+			"city": "Rome"
+		}
+	}`)
+	if err := schema.ValidateJSON[User](data); err != nil {
+		t.Errorf("expected ValidateJSON to pass, got %v", err)
+	}
+
+	badData := []byte(`{"name":"X"}`)
+	if err := schema.ValidateJSON[User](badData); err == nil {
+		t.Error("expected ValidateJSON to fail for short name")
+	}
+}
+
+// ---- MustValidateJSON ----
+
+func TestMustValidateJSON_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected MustValidateJSON to panic")
+		}
+	}()
+	schema.MustValidateJSON[User]([]byte(`{"name":"X"}`))
 }
 
 // ---- MustValidate ----
@@ -317,7 +351,7 @@ type Config struct {
 }
 
 func TestDefault_AppliedOnEmptyJSON(t *testing.T) {
-	cfg, err := schema.Parse[Config]([]byte(`{}`))
+	cfg, err := schema.ParseJSON[Config]([]byte(`{}`))
 	assertNoError(t, err)
 	if cfg.Lang != "en" {
 		t.Errorf("expected lang=en, got %q", cfg.Lang)
@@ -331,7 +365,7 @@ func TestDefault_AppliedOnEmptyJSON(t *testing.T) {
 }
 
 func TestDefault_NotOverriddenWhenSet(t *testing.T) {
-	cfg, err := schema.Parse[Config]([]byte(`{"lang":"fr","timeout":60}`))
+	cfg, err := schema.ParseJSON[Config]([]byte(`{"lang":"fr","timeout":60}`))
 	assertNoError(t, err)
 	if cfg.Lang != "fr" {
 		t.Errorf("expected lang=fr, got %q", cfg.Lang)

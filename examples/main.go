@@ -39,8 +39,8 @@ func main() {
 	fmt.Println(string(out))
 	fmt.Println()
 
-	// 2. Parse[T] — unmarshal + validate valid JSON.
-	fmt.Println("--- Parse valid JSON ---")
+	// 2. ParseJSON[T] — unmarshal + validate valid JSON.
+	fmt.Println("--- ParseJSON valid JSON ---")
 	validJSON := []byte(`{
 		"name": "Alice",
 		"email": "alice@example.com",
@@ -51,14 +51,14 @@ func main() {
 		"address": {"street": "Via Roma 1", "city": "Rome"}
 	}`)
 
-	user, err := schema.Parse[User](validJSON)
+	user, err := schema.ParseJSON[User](validJSON)
 	if err != nil {
 		log.Fatal("unexpected error:", err)
 	}
 	fmt.Printf("Parsed user: %+v\n\n", user)
 
-	// 3. Parse[T] — unmarshal + validate invalid JSON.
-	fmt.Println("--- Parse invalid JSON (multiple violations) ---")
+	// 3. ParseJSON[T] — unmarshal + validate invalid JSON.
+	fmt.Println("--- ParseJSON invalid JSON (multiple violations) ---")
 	invalidJSON := []byte(`{
 		"name": "A",
 		"email": "not-an-email",
@@ -69,7 +69,7 @@ func main() {
 		"address": {"street": "X", "city": "R"}
 	}`)
 
-	_, err = schema.Parse[User](invalidJSON)
+	_, err = schema.ParseJSON[User](invalidJSON)
 	if err != nil {
 		ve, ok := err.(schema.ValidationErrors)
 		if ok {
@@ -83,15 +83,15 @@ func main() {
 	}
 	fmt.Println()
 
-	// 4. MustParse[T] — demo panic recovery.
-	fmt.Println("--- MustParse (panic on invalid input) ---")
+	// 4. MustParseJSON[T] — demo panic recovery.
+	fmt.Println("--- MustParseJSON (panic on invalid input) ---")
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
 				fmt.Println("Recovered panic:", r)
 			}
 		}()
-		schema.MustParse[User]([]byte(`{"name":"X"}`))
+		schema.MustParseJSON[User]([]byte(`{"name":"X"}`))
 	}()
 	fmt.Println()
 

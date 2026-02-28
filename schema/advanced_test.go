@@ -78,7 +78,7 @@ type StrictStruct struct {
 
 func TestAdditionalProperties_Parse(t *testing.T) {
 	data := []byte(`{"name":"Alice","extra":"field"}`)
-	_, err := schema.Parse[StrictStruct](data)
+	_, err := schema.ParseJSON[StrictStruct](data)
 	if err == nil {
 		t.Fatal("expected error for extra field when additionalProperties=false")
 	}

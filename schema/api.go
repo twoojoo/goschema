@@ -89,12 +89,12 @@ func MustToJSONSchemaIndent[T any](prefix, indent string) []byte {
 	return b
 }
 
-// Parse unmarshals JSON data into a value of type T and validates it against
+// ParseJSON unmarshals JSON data into a value of type T and validates it against
 // the struct's `schema` tags. It is the idiomatic entry-point combining
 // json.Unmarshal, default-filling, and Validate in a single call.
 //
-//	user, err := schema.Parse[User](data)
-func Parse[T any](data []byte) (T, error) {
+//	user, err := schema.ParseJSON[User](data)
+func ParseJSON[T any](data []byte) (T, error) {
 	var v T
 
 	// Resolve schema to check AdditionalProperties
@@ -126,16 +126,39 @@ func Parse[T any](data []byte) (T, error) {
 	return v, nil
 }
 
-// MustParse is like [Parse] but panics on any error (unmarshal or validation).
-// Useful for hardcoded/test data that is known to be valid.
-//
-//	user := schema.MustParse[User]([]byte(`{"name":"Alice","age":30}`))
-func MustParse[T any](data []byte) T {
-	v, err := Parse[T](data)
+// Parse is an alias for ParseJSON.
+// Deprecated: use ParseJSON instead.
+func Parse[T any](data []byte) (T, error) {
+	return ParseJSON[T](data)
+}
+
+// ValidateJSON unmarshals JSON data into type T and validates it,
+// but discards the resulting object. Returns error if unmarshal or validation fails.
+func ValidateJSON[T any](data []byte) error {
+	_, err := ParseJSON[T](data)
+	return err
+}
+
+// MustParseJSON is like [ParseJSON] but panics on any error.
+func MustParseJSON[T any](data []byte) T {
+	v, err := ParseJSON[T](data)
 	if err != nil {
-		panic("goschema: MustParse failed: " + err.Error())
+		panic("goschema: MustParseJSON failed: " + err.Error())
 	}
 	return v
+}
+
+// MustParse is an alias for MustParseJSON.
+// Deprecated: use MustParseJSON instead.
+func MustParse[T any](data []byte) T {
+	return MustParseJSON[T](data)
+}
+
+// MustValidateJSON is like [ValidateJSON] but panics on error.
+func MustValidateJSON[T any](data []byte) {
+	if err := ValidateJSON[T](data); err != nil {
+		panic("goschema: MustValidateJSON failed: " + err.Error())
+	}
 }
 
 // ---- JSON Schema emitter ----

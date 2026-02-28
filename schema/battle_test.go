@@ -512,7 +512,7 @@ type DefaultRequired struct {
 
 func TestDefault_FillsRequired(t *testing.T) {
 	// JSON doesn't include lang — default=en fills it, required passes
-	cfg, err := schema.Parse[DefaultRequired]([]byte(`{}`))
+	cfg, err := schema.ParseJSON[DefaultRequired]([]byte(`{}`))
 	if err != nil {
 		t.Errorf("default should satisfy required: %v", err)
 	}
@@ -527,14 +527,14 @@ func TestDefault_FillsRequired(t *testing.T) {
 
 func TestParse_WrongType(t *testing.T) {
 	// JSON has valid syntax but wrong type for a field
-	_, err := schema.Parse[Simple]([]byte(`{"name": 123}`))
+	_, err := schema.ParseJSON[Simple]([]byte(`{"name": 123}`))
 	if err == nil {
 		t.Error("expected error when JSON type mismatches struct field type")
 	}
 }
 
 func TestParse_EmptyBytes(t *testing.T) {
-	_, err := schema.Parse[Simple]([]byte(``))
+	_, err := schema.ParseJSON[Simple]([]byte(``))
 	if err == nil {
 		t.Error("expected error for empty JSON input")
 	}
@@ -542,7 +542,7 @@ func TestParse_EmptyBytes(t *testing.T) {
 
 func TestParse_NullJSON(t *testing.T) {
 	// `null` is valid JSON but unmarshal into struct gives zero value
-	_, err := schema.Parse[Simple]([]byte(`null`))
+	_, err := schema.ParseJSON[Simple]([]byte(`null`))
 	// with required name, this should fail validation
 	if err == nil {
 		t.Error("expected validation error: null JSON leaves required fields empty")
