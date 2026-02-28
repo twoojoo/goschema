@@ -38,6 +38,23 @@ func validateValue(v reflect.Value, schema *ObjectSchema, path string) Validatio
 		return errs
 	}
 
+	// DependentRequired check
+	if schema.DependentRequired != nil {
+		for sourceField, dependents := range schema.DependentRequired {
+			if isPresent(v, schema, sourceField) {
+				for _, dep := range dependents {
+					if !isPresent(v, schema, dep) {
+						errs = append(errs, ValidationError{
+							Field:   path,
+							Message: fmt.Sprintf("field %q is required because %q is present", dep, sourceField),
+							Value:   nil,
+						})
+					}
+				}
+			}
+		}
+	}
+
 	t := v.Type()
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -61,6 +78,19 @@ func validateValue(v reflect.Value, schema *ObjectSchema, path string) Validatio
 	}
 
 	return errs
+}
+
+// isPresent checks if a field is "present" (non-zero or non-nil pointer) in a struct.
+func isPresent(v reflect.Value, schema *ObjectSchema, jsonName string) bool {
+	t := v.Type()
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if jsonFieldName(f) == jsonName {
+			fv := v.Field(i)
+			return !fv.IsZero()
+		}
+	}
+	return false
 }
 
 // fieldPath builds a dot-separated path.
@@ -95,6 +125,9 @@ func validateField(v reflect.Value, fs FieldSchema, path string) ValidationError
 	isPtr := v.Kind() == reflect.Ptr
 	if isPtr {
 		if v.IsNil() {
+			if fs.Nullable {
+				return nil
+			}
 			if fs.Required {
 				errs = append(errs, ValidationError{
 					Field:   path,
@@ -105,6 +138,61 @@ func validateField(v reflect.Value, fs FieldSchema, path string) ValidationError
 			return errs
 		}
 		v = v.Elem()
+	}
+
+	// Composition Keywords (skipped if empty and not required)
+	if !(v.IsZero() && !fs.Required) {
+		if fs.Not != nil {
+			notErrs := validateField(v, *fs.Not, path)
+			if len(notErrs) == 0 {
+				errs = append(errs, ValidationError{
+					Field:   path,
+					Message: "value must NOT match the 'not' schema",
+					Value:   v.Interface(),
+				})
+			}
+		}
+
+		if len(fs.AllOf) > 0 {
+			for _, sub := range fs.AllOf {
+				errs = append(errs, validateField(v, sub, path)...)
+			}
+		}
+
+		if len(fs.AnyOf) > 0 {
+			anyPassed := false
+			for _, sub := range fs.AnyOf {
+				subErrs := validateField(v, sub, path)
+				if len(subErrs) == 0 {
+					anyPassed = true
+					break
+				}
+			}
+			if !anyPassed {
+				errs = append(errs, ValidationError{
+					Field:   path,
+					Message: "value must match at least one schema in 'anyOf'",
+					Value:   v.Interface(),
+				})
+			}
+		}
+
+		if len(fs.OneOf) > 0 {
+			passCount := 0
+			for _, sub := range fs.OneOf {
+				subErrs := validateField(v, sub, path)
+				if len(subErrs) == 0 {
+					passCount++
+				}
+			}
+			if passCount != 1 {
+				errs = append(errs, ValidationError{
+					Field:   path,
+					Message: fmt.Sprintf("value must match exactly one schema in 'oneOf' (matched %d)", passCount),
+					Value:   v.Interface(),
+				})
+			}
+		}
 	}
 
 	switch fs.Type {
@@ -121,6 +209,20 @@ func validateField(v reflect.Value, fs FieldSchema, path string) ValidationError
 			errs = append(errs, validateMap(v, fs.Map, path)...)
 		} else if fs.Nested != nil {
 			errs = append(errs, validateValue(v, fs.Nested, path)...)
+		}
+	case "any":
+		// Dispatch based on value kind for sub-schemas/composition.
+		switch v.Kind() {
+		case reflect.String:
+			errs = append(errs, validateString(v, fs.String, path)...)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Float32, reflect.Float64:
+			errs = append(errs, validateNumber(v, fs.Number, path)...)
+		case reflect.Bool:
+			errs = append(errs, validateBool(v, fs.Bool, path)...)
+		case reflect.Slice, reflect.Array:
+			errs = append(errs, validateArray(v, fs.Array, path)...)
+		case reflect.Map:
+			errs = append(errs, validateMap(v, fs.Map, path)...)
 		}
 	}
 
@@ -346,10 +448,17 @@ func validateArray(v reflect.Value, c *ArrayConstraints, path string) Validation
 		}
 	}
 
+	// Per-element validation (items)
+	if c.Items != nil {
+		for i := 0; i < n; i++ {
+			itemPath := fmt.Sprintf("%s[%d]", path, i)
+			errs = append(errs, validateField(v.Index(i), *c.Items, itemPath)...)
+		}
+	}
+
 	return errs
 }
 
-// validateMap validates a map[string]X field against MapConstraints.
 func validateMap(v reflect.Value, c *MapConstraints, path string) ValidationErrors {
 	var errs ValidationErrors
 	if c == nil {

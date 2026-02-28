@@ -33,6 +33,21 @@ func parseObjectSchema(t reflect.Type) (*ObjectSchema, error) {
 			if v, ok := opts["description"]; ok {
 				obj.Description = v
 			}
+			if v, ok := opts["additionalProperties"]; ok {
+				b := v == "true"
+				obj.AdditionalProperties = &b
+			}
+			// dependentRequired:fieldA=fieldB|fieldC
+			for k, v := range opts {
+				if strings.HasPrefix(k, "dependentRequired:") {
+					if obj.DependentRequired == nil {
+						obj.DependentRequired = make(map[string][]string)
+					}
+					sourceField := strings.TrimPrefix(k, "dependentRequired:")
+					requiredFields := strings.Split(v, "|")
+					obj.DependentRequired[sourceField] = requiredFields
+				}
+			}
 			continue
 		}
 
@@ -158,6 +173,69 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 		fs.Type = "any"
 	}
 
+	// Advanced keywords
+	fs.Nullable = opts["nullable"] == "true"
+
+	// Composition (simple one-rule-per-schema for now)
+	if v, ok := opts["not"]; ok {
+		sub, err := buildSubSchema(v)
+		if err != nil {
+			return fs, err
+		}
+		fs.Not = sub
+	}
+
+	// For multiple sub-schemas (anyOf/oneOf/allOf), we look for semi-colon separated lists
+	// e.g. anyOf="minLength=5;pattern=^[0-9]+$"
+	parseComposition := func(key string) ([]FieldSchema, error) {
+		if v, ok := opts[key]; ok {
+			schemas := strings.Split(v, ";")
+			res := make([]FieldSchema, 0, len(schemas))
+			for _, s := range schemas {
+				sub, err := buildSubSchema(s)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, *sub)
+			}
+			return res, nil
+		}
+		return nil, nil
+	}
+
+	var err error
+	if fs.AnyOf, err = parseComposition("anyOf"); err != nil {
+		return fs, err
+	}
+	if fs.OneOf, err = parseComposition("oneOf"); err != nil {
+		return fs, err
+	}
+	if fs.AllOf, err = parseComposition("allOf"); err != nil {
+		return fs, err
+	}
+
+	return fs, nil
+}
+
+// buildSubSchema builds a FieldSchema from a subset of a tag string.
+func buildSubSchema(raw string) (*FieldSchema, error) {
+	opts := parseTagOptions(raw)
+	// We don't have reflect.StructField here, so we assume a generic "any" type
+	// and apply whatever constraints are in the options.
+	fs := &FieldSchema{Type: "any"}
+	var err error
+
+	// Try building all constraint types; the validator will use whichever is non-nil.
+	if fs.String, err = buildStringConstraints(opts, false); err != nil {
+		return nil, err
+	}
+	if fs.Number, err = buildNumberConstraints(opts, false); err != nil {
+		return nil, err
+	}
+	if fs.Bool, err = buildBoolConstraints(opts, false); err != nil {
+		return nil, err
+	}
+	// We don't recurse into array/object here for simplicity in tags.
 	return fs, nil
 }
 
@@ -336,6 +414,25 @@ func buildArrayConstraints(opts map[string]string, required bool) (*ArrayConstra
 	}
 	if opts["uniqueItems"] == "true" {
 		ac.UniqueItems = true
+	}
+
+	// items:minLength=5
+	itemsRaw := ""
+	for k, v := range opts {
+		if strings.HasPrefix(k, "items:") {
+			rule := strings.TrimPrefix(k, "items:")
+			if itemsRaw != "" {
+				itemsRaw += ","
+			}
+			itemsRaw += rule + "=" + v
+		}
+	}
+	if itemsRaw != "" {
+		sub, err := buildSubSchema(itemsRaw)
+		if err != nil {
+			return nil, err
+		}
+		ac.Items = sub
 	}
 
 	return ac, nil

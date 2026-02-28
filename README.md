@@ -201,83 +201,25 @@ type User struct {
 // error field: "address.street"
 ```
 
-### Struct-level metadata (`title` and `description`)
+| `anyOf=S1;S2` | Value must match at least one sub-schema | `schema:"anyOf=minLength=5;pattern=^[0-9]+$"` |
+| `oneOf=S1;S2` | Value must match exactly one sub-schema | `schema:"oneOf=minLength=5;pattern=^[0-9]+$"` |
+| `allOf=S1;S2` | Value must match all sub-schemas | `schema:"allOf=minLength=2;pattern=^[A-Z]+$"` |
+| `not=S` | Value must NOT match sub-schema | `schema:"not=minLength=5"` |
+| `nullable` | `nil` is always valid | `schema:"nullable=true"` |
 
-Use a blank identifier `_` field as a sentinel — it is invisible to the validator:
+### Struct-level metadata & Advanced Object rules
+
+Use a blank identifier `_` field as a sentinel:
 
 ```go
 type Product struct {
-    _    any    `schema:"title=Product,description=A purchasable item"`
+    _    any    `schema:"title=Product,description=A item,additionalProperties=false,dependentRequired:billing_id=credit_card|billing_addr"`
     Name string `json:"name" schema:"required"`
 }
-
-js, _ := schema.ToJSONSchema[Product]()
-// js["title"]       == "Product"
-// js["description"] == "A purchasable item"
 ```
 
----
-
-## `ValidationErrors`
-
-`ValidationErrors` implements `error` and can be cast directly for per-field inspection:
-
-```go
-err := schema.Validate(user)
-if ve, ok := err.(schema.ValidationErrors); ok {
-    fmt.Println(ve.Error()) // human-readable string
-    ve.Has("email")         // true if "email" has at least one error
-
-    // JSON-serialisable
-    data, _ := json.Marshal(ve)
-    // [{"field":"email","message":"must be a valid email","value":"bad"}]
-}
-```
-
-Each `ValidationError`:
-
-```go
-type ValidationError struct {
-    Field   string // dot-separated JSON path, e.g. "address.street"
-    Message string // human-readable description
-    Value   any    // the actual value that failed
-}
-```
-
----
-
-## Pointer Fields
-
-Pointer fields (`*T`) are **optional by default**. Add `required` to make them mandatory.
-
-```go
-type Doc struct {
-    Name    string  `json:"name"    schema:"required"`         // must be non-empty string
-    Summary *string `json:"summary"`                           // nil is fine
-    Author  *string `json:"author"  schema:"required"`         // nil fails
-    Score   *int    `json:"score"   schema:"minimum=0,maximum=100"` // constraints applied if non-nil
-}
-```
-
----
-
-## Defaults
-
-`default=` is applied by `Parse[T]` **only** when the field is the zero value after unmarshal. It is never applied by `Validate` alone.
-
-```go
-type Config struct {
-    Lang    string `json:"lang"    schema:"enum=en|fr|de,default=en"`
-    Timeout int    `json:"timeout" schema:"minimum=1,default=30"`
-    Debug   bool   `json:"debug"   schema:"default=false"`
-}
-
-cfg, _ := schema.Parse[Config]([]byte(`{}`))
-// cfg.Lang    == "en"
-// cfg.Timeout == 30
-```
-
-> **Note:** For non-pointer numeric and boolean fields, a `default` will be applied even if the JSON explicitly sends the zero value (`0`, `false`, `""`). Use `*int`, `*bool`, `*string` pointers if you need to distinguish "absent" from "zero".
+- **`additionalProperties=false`**: Used by `Parse[T]` to forbid unknown JSON fields.
+- **`dependentRequired:A=B|C`**: If field A is present, B and C must also be present.
 
 ---
 
@@ -288,42 +230,38 @@ cfg, _ := schema.Parse[Config]([]byte(`{}`))
 | Feature | Tag / Mechanism |
 |---|---|
 | `type` | Inferred from Go type |
-| `title` | `_ any \`schema:"title=..."\`` sentinel field |
-| `description` | `_ any \`schema:"description=..."\`` sentinel field |
-| `required` | `schema:"required"` on field |
-| `default` | `schema:"default=VALUE"` (applied in `Parse[T]`) |
-| `const` | `schema:"const=VALUE"` — string, number, boolean |
+| `title` | `_ any \`schema:"title=..."\`` |
+| `description` | `_ any \`schema:"description=..."\`` |
+| `required` | `schema:"required"` |
+| `default` | `schema:"default=VALUE"` |
+| `const` | `schema:"const=VALUE"` |
 | `enum` | `schema:"enum=A\|B\|C"` |
-| `minLength` / `maxLength` | String — counts Unicode runes |
-| `pattern` | String — standard Go regexp |
-| `format` | String — `email`, `uri`, `date`, `time`, `date-time`, `uuid`, `ipv4`, `ipv6` |
-| `minimum` / `maximum` | Numeric — inclusive |
-| `exclusiveMinimum` / `exclusiveMaximum` | Numeric — exclusive |
-| `multipleOf` | Numeric — float-precision-safe |
+| `minLength` / `maxLength` | String (runes) |
+| `pattern` | String (regexp) |
+| `format` | `email`, `uri`, `date`, `time`, `date-time`, `uuid`, `ipv4`, `ipv6` |
+| `minimum` / `maximum` | Numeric |
+| `exclusiveMinimum` / `exclusiveMaximum` | Numeric |
+| `multipleOf` | Numeric (float-safe) |
 | `minItems` / `maxItems` | Array / slice |
-| `uniqueItems` | Array / slice of comparable types |
-| `minProperties` / `maxProperties` | `map[string]T` fields |
-| Nested object schemas | Recursive struct validation |
-| Dot-path error reporting | `"address.street"` |
-| `ToJSONSchema[T]()` | Full JSON Schema map output |
+| `uniqueItems` | Array / slice |
+| `items` | Array elements: `schema:"items:minLength=5"` |
+| `anyOf` / `oneOf` / `allOf` | Composition: `schema:"anyOf=S1;S2"` |
+| `not` | Negation: `schema:"not=S"` |
+| `nullable` | `schema:"nullable=true"` |
+| `minProperties` / `maxProperties` | Maps |
+| `dependentRequired` | `schema:"dependentRequired:A=B|C"` |
+| `additionalProperties` | `schema:"additionalProperties=false"` (Strict Parse) |
 
 ### ❌ Not Supported
 
 | Feature | Notes |
 |---|---|
-| `allOf` / `anyOf` / `oneOf` | Composition keywords — not expressible in flat struct tags without losing Go type structure |
-| `not` | Negated schemas — same limitation as above |
-| `if` / `then` / `else` | Conditional schemas (draft-07) |
-| `$ref` / `$id` / `$schema` | Schema references and identifiers |
-| `dependencies` / `dependentRequired` | Field-level dependency rules |
-| `additionalProperties` | Meaningless for typed Go structs |
-| `patternProperties` | Keys matching a regex pattern |
-| `items` schema | Per-element constraints on `[]SomeStruct` (array-level constraints work) |
-| `contains` | At least one item matches a schema |
-| `readOnly` / `writeOnly` | Access semantics |
-| `nullable` emitted in ToJSONSchema | `*T` → `["T","null"]` type union not yet emitted |
-| `format`: `hostname`, `idn-email`, `uri-reference`, `regex`, etc. | Less common formats |
-| Circular / recursive types | Will cause an infinite recursion — **document your types as DAGs** |
+| `if` / `then` / `else` | Conditional logic |
+| `$ref` / `$id` / `$schema` | Schema references |
+| `contains` | Array contains at least one match |
+| `patternProperties` | Regex-based key patterns |
+| POSITIONAL `items` (tuple-like) | Positional validation for heterogeneous arrays |
+| Circular types | Unsupported (infinite recursion) |
 
 ---
 

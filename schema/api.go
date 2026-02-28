@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -76,16 +77,28 @@ func ToJSONSchema[T any]() (map[string]any, error) {
 //	user, err := schema.Parse[User](data)
 func Parse[T any](data []byte) (T, error) {
 	var v T
-	if err := json.Unmarshal(data, &v); err != nil {
+
+	// Resolve schema to check AdditionalProperties
+	t := reflect.TypeOf(v)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	obj, err := parseObjectSchema(t)
+	if err != nil {
+		return v, err
+	}
+
+	// Unmarshal
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if obj.AdditionalProperties != nil && !*obj.AdditionalProperties {
+		dec.DisallowUnknownFields()
+	}
+	if err := dec.Decode(&v); err != nil {
 		return v, fmt.Errorf("goschema: parse error: %w", err)
 	}
 
 	// Apply defaults to zero-value fields before validation.
 	rv := reflect.ValueOf(&v).Elem()
-	obj, err := parseObjectSchema(rv.Type())
-	if err != nil {
-		return v, err
-	}
 	applyDefaults(rv, obj)
 
 	if err := Validate(v); err != nil {
@@ -132,36 +145,69 @@ func objectSchemaToJSON(obj *ObjectSchema) map[string]any {
 	if len(required) > 0 {
 		result["required"] = required
 	}
+	if obj.AdditionalProperties != nil {
+		result["additionalProperties"] = *obj.AdditionalProperties
+	}
+	if len(obj.DependentRequired) > 0 {
+		result["dependentRequired"] = obj.DependentRequired
+	}
 	return result
 }
 
 func fieldSchemaToJSON(fs FieldSchema) map[string]any {
+	var m map[string]any
+
 	switch fs.Type {
 	case "string":
-		return stringSchemaToJSON(fs.String)
+		m = stringSchemaToJSON(fs.String)
 	case "integer":
-		m := numberSchemaToJSON(fs.Number)
+		m = numberSchemaToJSON(fs.Number)
 		m["type"] = "integer"
-		return m
 	case "number":
-		m := numberSchemaToJSON(fs.Number)
+		m = numberSchemaToJSON(fs.Number)
 		m["type"] = "number"
-		return m
 	case "boolean":
-		return map[string]any{"type": "boolean"}
+		m = map[string]any{"type": "boolean"}
 	case "array":
-		return arraySchemaToJSON(fs.Array)
+		m = arraySchemaToJSON(fs.Array)
 	case "object":
 		if fs.Map != nil {
-			return mapSchemaToJSON(fs.Map)
+			m = mapSchemaToJSON(fs.Map)
+		} else if fs.Nested != nil {
+			m = objectSchemaToJSON(fs.Nested)
+		} else {
+			m = map[string]any{"type": "object"}
 		}
-		if fs.Nested != nil {
-			return objectSchemaToJSON(fs.Nested)
-		}
-		return map[string]any{"type": "object"}
 	default:
-		return map[string]any{}
+		m = map[string]any{}
 	}
+
+	// Advanced Keywords
+	if fs.Nullable {
+		m["nullable"] = true
+	}
+	if fs.Not != nil {
+		m["not"] = fieldSchemaToJSON(*fs.Not)
+	}
+	if len(fs.AnyOf) > 0 {
+		m["anyOf"] = compositionToJSON(fs.AnyOf)
+	}
+	if len(fs.OneOf) > 0 {
+		m["oneOf"] = compositionToJSON(fs.OneOf)
+	}
+	if len(fs.AllOf) > 0 {
+		m["allOf"] = compositionToJSON(fs.AllOf)
+	}
+
+	return m
+}
+
+func compositionToJSON(schemas []FieldSchema) []map[string]any {
+	res := make([]map[string]any, len(schemas))
+	for i, s := range schemas {
+		res[i] = fieldSchemaToJSON(s)
+	}
+	return res
 }
 
 func stringSchemaToJSON(c *StringConstraints) map[string]any {
@@ -229,6 +275,9 @@ func arraySchemaToJSON(c *ArrayConstraints) map[string]any {
 	}
 	if c.UniqueItems {
 		m["uniqueItems"] = true
+	}
+	if c.Items != nil {
+		m["items"] = fieldSchemaToJSON(*c.Items)
 	}
 	return m
 }

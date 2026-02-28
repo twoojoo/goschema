@@ -29,6 +29,7 @@ type ArrayConstraints struct {
 	MaxItems    *int
 	UniqueItems bool
 	Required    bool
+	Items       *FieldSchema // schema for each element in the array
 }
 
 // BoolConstraints holds JSON Schema constraints applicable to boolean values.
@@ -68,6 +69,14 @@ type FieldSchema struct {
 	Nested *ObjectSchema
 
 	Required bool
+
+	// Advanced keywords
+	Nullable bool
+
+	AnyOf []FieldSchema
+	OneOf []FieldSchema
+	AllOf []FieldSchema
+	Not   *FieldSchema
 }
 
 // ObjectSchema is the fully resolved schema for a struct type.
@@ -76,4 +85,8 @@ type ObjectSchema struct {
 	Title       string
 	Description string
 	Fields      map[string]FieldSchema
+
+	// Advanced keywords
+	AdditionalProperties *bool               // nil means true (default)
+	DependentRequired    map[string][]string // property dependencies
 }
