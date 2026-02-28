@@ -261,8 +261,8 @@ func validateNumber(v reflect.Value, c *NumberConstraints, path string) Validati
 		})
 	}
 	if c.MultipleOf != nil && *c.MultipleOf != 0 {
-		remainder := math.Mod(n, *c.MultipleOf)
-		if math.Abs(remainder) > 1e-9 {
+		quotient := n / *c.MultipleOf
+		if math.Abs(quotient-math.Round(quotient)) > 1e-9 {
 			errs = append(errs, ValidationError{
 				Field:   path,
 				Message: fmt.Sprintf("must be a multiple of %g (got %g)", *c.MultipleOf, n),

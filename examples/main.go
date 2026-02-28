@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/giovanni/goschema/schema"
+	"github.com/twoojoo/goschema/schema"
 )
 
 // Address is a nested struct to demonstrate recursive validation.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/giovanni/goschema/schema"
+	"github.com/twoojoo/goschema/schema"
 )
 
 // ---- test structs ----
