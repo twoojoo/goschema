@@ -24,7 +24,7 @@ func TestItems_Validation(t *testing.T) {
 // ---- nullable ----
 
 type NullableDoc struct {
-	Name *string `json:"name" schema:"required,nullable=true"`
+	Name *string `json:"name" schema:"required,nullable"`
 }
 
 func TestNullable_Validation(t *testing.T) {

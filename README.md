@@ -205,7 +205,7 @@ type User struct {
 | `oneOf=S1;S2` | Value must match exactly one sub-schema | `schema:"oneOf=minLength=5;pattern=^[0-9]+$"` |
 | `allOf=S1;S2` | Value must match all sub-schemas | `schema:"allOf=minLength=2;pattern=^[A-Z]+$"` |
 | `not=S` | Value must NOT match sub-schema | `schema:"not=minLength=5"` |
-| `nullable` | `nil` is always valid | `schema:"nullable=true"` |
+| `nullable` | `nil` is always valid | `schema:"nullable"` |
 
 ### Struct-level metadata & Advanced Object rules
 
@@ -247,7 +247,7 @@ type Product struct {
 | `items` | Array elements: `schema:"items:minLength=5"` |
 | `anyOf` / `oneOf` / `allOf` | Composition: `schema:"anyOf=S1;S2"` |
 | `not` | Negation: `schema:"not=S"` |
-| `nullable` | `schema:"nullable=true"` |
+| `nullable` | `schema:"nullable"` |
 | `minProperties` / `maxProperties` | Maps |
 | `dependentRequired` | `schema:"dependentRequired:A=B|C"` |
 | `additionalProperties` | `schema:"additionalProperties=false"` (Strict Parse) |
