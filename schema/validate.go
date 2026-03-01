@@ -20,9 +20,9 @@ var formatPatterns = map[string]*regexp.Regexp{
 	"ipv6":      regexp.MustCompile(`(?i)^[0-9a-f:]+$`),
 }
 
-// validateValue is the core recursive validation engine.
+// validateObject is the core recursive validation engine for structs.
 // path is the dot-separated JSON field path for error messages.
-func validateValue(v reflect.Value, schema *ObjectSchema, path string) ValidationErrors {
+func validateObject(v reflect.Value, schema *ObjectSchema, path string) ValidationErrors {
 	var errs ValidationErrors
 
 	// Dereference pointers.
@@ -208,7 +208,7 @@ func validateField(v reflect.Value, fs FieldSchema, path string) ValidationError
 		if fs.Map != nil {
 			errs = append(errs, validateMap(v, fs.Map, path)...)
 		} else if fs.Nested != nil {
-			errs = append(errs, validateValue(v, fs.Nested, path)...)
+			errs = append(errs, validateObject(v, fs.Nested, path)...)
 		}
 	case "any":
 		// Dispatch based on value kind for sub-schemas/composition.
@@ -494,13 +494,69 @@ func validateMap(v reflect.Value, c *MapConstraints, path string) ValidationErro
 		})
 	}
 
+	// Recursive validation for map values.
+	if c.Values != nil {
+		for _, key := range v.MapKeys() {
+			val := v.MapIndex(key)
+			subPath := fieldPath(path, key.String())
+			errs = append(errs, validateField(val, *c.Values, subPath)...)
+		}
+	}
+
 	return errs
 }
 
-// applyDefaults walks a settable struct value and sets zero-value fields to
+// applyFieldDefaults is the recursive entry-point for default-value filling.
+func applyFieldDefaults(v reflect.Value, fs FieldSchema) {
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+
+	// Apply immediate default if value is zero.
+	if fs.Default != nil && v.CanSet() && v.IsZero() {
+		raw := *fs.Default
+		switch v.Kind() {
+		case reflect.String:
+			v.SetString(raw)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+				v.SetInt(n)
+			}
+		case reflect.Float32, reflect.Float64:
+			if f, err := strconv.ParseFloat(raw, 64); err == nil {
+				v.SetFloat(f)
+			}
+		case reflect.Bool:
+			v.SetBool(raw == "true")
+		}
+	}
+
+	// Recurse based on type.
+	switch fs.Type {
+	case "array":
+		if fs.Array != nil && fs.Array.Items != nil {
+			for i := 0; i < v.Len(); i++ {
+				applyFieldDefaults(v.Index(i), *fs.Array.Items)
+			}
+		}
+	case "object":
+		if fs.Map != nil && fs.Map.Values != nil {
+			for _, key := range v.MapKeys() {
+				applyFieldDefaults(v.MapIndex(key), *fs.Map.Values)
+			}
+		} else if fs.Nested != nil {
+			applyObjectDefaults(v, fs.Nested)
+		}
+	}
+}
+
+// applyObjectDefaults walks a settable struct value and sets zero-value fields to
 // their declared default (from `schema:"default=..."`) before validation runs.
 // It must be called with reflect.ValueOf(&v).Elem() so fields are settable.
-func applyDefaults(v reflect.Value, obj *ObjectSchema) {
+func applyObjectDefaults(v reflect.Value, obj *ObjectSchema) {
 	for v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			return
@@ -531,28 +587,6 @@ func applyDefaults(v reflect.Value, obj *ObjectSchema) {
 			continue
 		}
 
-		// Apply the default only when the field is still the zero value.
-		if fs.Default != nil && fv.IsZero() {
-			raw := *fs.Default
-			switch fv.Kind() {
-			case reflect.String:
-				fv.SetString(raw)
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
-					fv.SetInt(n)
-				}
-			case reflect.Float32, reflect.Float64:
-				if f, err := strconv.ParseFloat(raw, 64); err == nil {
-					fv.SetFloat(f)
-				}
-			case reflect.Bool:
-				fv.SetBool(raw == "true")
-			}
-		}
-
-		// Recurse into nested structs regardless of whether this field had a default.
-		if fs.Nested != nil {
-			applyDefaults(fv, fs.Nested)
-		}
+		applyFieldDefaults(fv, fs)
 	}
 }

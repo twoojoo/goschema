@@ -10,11 +10,13 @@ import (
 	"strings"
 )
 
-// Validate checks a struct value against its `schema` struct tags.
-// It returns nil if all constraints pass, or a [ValidationErrors] value
-// listing every violation found.
+// Validate checks a value against its type's JSON Schema constraints.
+// It supports structs, slices, arrays, and maps.
 func Validate(v any) error {
 	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return ValidationErrors{{Field: "", Message: "value is nil", Value: nil}}
+	}
 
 	// Dereference pointer.
 	for rv.Kind() == reflect.Ptr {
@@ -24,16 +26,12 @@ func Validate(v any) error {
 		rv = rv.Elem()
 	}
 
-	if rv.Kind() != reflect.Struct {
-		return fmt.Errorf("goschema: Validate expects a struct or pointer to struct, got %T", v)
-	}
-
-	obj, err := parseObjectSchema(rv.Type())
+	fs, err := reflectTypeToSchema(rv.Type())
 	if err != nil {
 		return err
 	}
 
-	errs := validateValue(rv, obj, "")
+	errs := validateField(rv, fs, "")
 	if len(errs) == 0 {
 		return nil
 	}
@@ -61,16 +59,16 @@ func ToJSONSchema[T any]() (map[string]any, error) {
 	for t != nil && t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	if t == nil || t.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("goschema: ToJSONSchema requires a struct type parameter")
+	if t == nil {
+		return nil, fmt.Errorf("goschema: ToJSONSchema requires a non-nil type")
 	}
 
-	obj, err := parseObjectSchema(t)
+	fs, err := reflectTypeToSchema(t)
 	if err != nil {
 		return nil, err
 	}
 
-	return objectSchemaToJSON(obj), nil
+	return fieldSchemaToJSON(fs), nil
 }
 
 // ToJSONSchemaIndent is like ToJSONSchema but returns the schema as indented
@@ -100,28 +98,29 @@ func MustToJSONSchemaIndent[T any](prefix, indent string) []byte {
 func ParseJSON[T any](data []byte) (T, error) {
 	var v T
 
-	// Resolve schema to check AdditionalProperties
+	// Resolve schema for unmarshal options (e.g. DisallowUnknownFields)
 	t := reflect.TypeOf(v)
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	obj, err := parseObjectSchema(t)
+	fs, err := reflectTypeToSchema(t)
 	if err != nil {
 		return v, err
 	}
 
 	// Unmarshal
 	dec := json.NewDecoder(bytes.NewReader(data))
-	if obj.AdditionalProperties != nil && !*obj.AdditionalProperties {
+	// Strict mode only applies if we have an object schema with AdditionalProperties=false.
+	if fs.Nested != nil && fs.Nested.AdditionalProperties != nil && !*fs.Nested.AdditionalProperties {
 		dec.DisallowUnknownFields()
 	}
 	if err := dec.Decode(&v); err != nil {
 		return v, wrapUnmarshalError(err)
 	}
 
-	// Apply defaults to zero-value fields before validation.
+	// Apply defaults before validation.
 	rv := reflect.ValueOf(&v).Elem()
-	applyDefaults(rv, obj)
+	applyFieldDefaults(rv, fs)
 
 	if err := Validate(v); err != nil {
 		return v, err
@@ -385,6 +384,9 @@ func mapSchemaToJSON(c *MapConstraints) map[string]any {
 	}
 	if c.MaxProperties != nil {
 		m["maxProperties"] = *c.MaxProperties
+	}
+	if c.Values != nil {
+		m["additionalProperties"] = fieldSchemaToJSON(*c.Values)
 	}
 	return m
 }

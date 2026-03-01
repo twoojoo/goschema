@@ -88,12 +88,68 @@ func jsonFieldName(f reflect.StructField) string {
 	return parts[0]
 }
 
+// reflectTypeToSchema converts a reflect.Type to a base FieldSchema without
+// applying any tag-based constraints (other than recursion into structs/slices).
+func reflectTypeToSchema(t reflect.Type) (FieldSchema, error) {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	fs := FieldSchema{}
+
+	switch t.Kind() {
+	case reflect.String:
+		fs.Type = "string"
+		fs.String = &StringConstraints{}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		fs.Type = "integer"
+		fs.Number = &NumberConstraints{}
+	case reflect.Float32, reflect.Float64:
+		fs.Type = "number"
+		fs.Number = &NumberConstraints{}
+	case reflect.Bool:
+		fs.Type = "boolean"
+		fs.Bool = &BoolConstraints{}
+	case reflect.Slice, reflect.Array:
+		fs.Type = "array"
+		itemSchema, err := reflectTypeToSchema(t.Elem())
+		if err != nil {
+			return fs, err
+		}
+		fs.Array = &ArrayConstraints{Items: &itemSchema}
+	case reflect.Map:
+		fs.Type = "object"
+		valueSchema, err := reflectTypeToSchema(t.Elem())
+		if err != nil {
+			return fs, err
+		}
+		fs.Map = &MapConstraints{Values: &valueSchema}
+	case reflect.Struct:
+		fs.Type = "object"
+		obj, err := parseObjectSchema(t)
+		if err != nil {
+			return fs, err
+		}
+		fs.Nested = obj
+	case reflect.Interface:
+		fs.Type = "any"
+	default:
+		fs.Type = "any"
+	}
+
+	return fs, nil
+}
+
 // buildFieldSchema maps a reflect.StructField to a FieldSchema by combining
 // the Go type information with the `schema` struct tag.
 func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, error) {
-	ft := f.Type
+	fs, err := reflectTypeToSchema(f.Type)
+	if err != nil {
+		return fs, err
+	}
+	fs.JSONName = jsonName
 
-	// Dereference pointer — a nil pointer means "not required" by default.
+	ft := f.Type
 	isPtr := ft.Kind() == reflect.Ptr
 	if isPtr {
 		ft = ft.Elem()
@@ -102,7 +158,6 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 	rawTag := f.Tag.Get("schema")
 	opts := parseTagOptions(rawTag)
 
-	fs := FieldSchema{JSONName: jsonName}
 	// `required` can be set explicitly in the tag; pointers are optional by
 	// default unless required is set.
 	fs.Required = opts["required"] == "true" || (!isPtr && opts["required"] != "false" && rawTagHasKey(rawTag, "required"))
@@ -112,65 +167,48 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 		fs.Default = &v
 	}
 
-	switch ft.Kind() {
-	case reflect.String:
-		fs.Type = "string"
+	// Override/augment base schema with tag constraints.
+	switch fs.Type {
+	case "string":
 		sc, err := buildStringConstraints(opts, fs.Required)
 		if err != nil {
 			return fs, err
 		}
 		fs.String = sc
-
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		fs.Type = "integer"
+	case "integer", "number":
 		nc, err := buildNumberConstraints(opts, fs.Required)
 		if err != nil {
 			return fs, err
 		}
 		fs.Number = nc
-
-	case reflect.Float32, reflect.Float64:
-		fs.Type = "number"
-		nc, err := buildNumberConstraints(opts, fs.Required)
-		if err != nil {
-			return fs, err
-		}
-		fs.Number = nc
-
-	case reflect.Bool:
-		fs.Type = "boolean"
+	case "boolean":
 		bc, err := buildBoolConstraints(opts, fs.Required)
 		if err != nil {
 			return fs, err
 		}
 		fs.Bool = bc
-
-	case reflect.Slice, reflect.Array:
-		fs.Type = "array"
-		ac, err := buildArrayConstraints(opts, fs.Required)
+	case "array":
+		ac, err := buildArrayConstraints(opts, fs.Required, ft.Elem())
 		if err != nil {
 			return fs, err
 		}
+		// Merge tag-based items rule if present; otherwise keep what reflect found.
+		if ac.Items != nil {
+			fs.Array.Items = ac.Items
+		}
+		// Copy array constraints
+		items := fs.Array.Items
 		fs.Array = ac
-
-	case reflect.Map:
-		fs.Type = "object"
-		mc, err := buildMapConstraints(opts, fs.Required)
-		if err != nil {
-			return fs, err
+		fs.Array.Items = items
+	case "object":
+		if fs.Map != nil {
+			mc, err := buildMapConstraints(opts, fs.Required)
+			if err != nil {
+				return fs, err
+			}
+			mc.Values = fs.Map.Values
+			fs.Map = mc
 		}
-		fs.Map = mc
-
-	case reflect.Struct:
-		fs.Type = "object"
-		nested, err := parseObjectSchema(ft)
-		if err != nil {
-			return fs, err
-		}
-		fs.Nested = nested
-
-	default:
-		fs.Type = "any"
 	}
 
 	// Advanced keywords
@@ -187,7 +225,7 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 
 	// For multiple sub-schemas (anyOf/oneOf/allOf), we look for semi-colon separated lists
 	// e.g. anyOf="minLength=5;pattern=^[0-9]+$"
-	parseComposition := func(key string) ([]FieldSchema, error) {
+	parseComp := func(key string) ([]FieldSchema, error) {
 		if v, ok := opts[key]; ok {
 			schemas := strings.Split(v, ";")
 			res := make([]FieldSchema, 0, len(schemas))
@@ -203,14 +241,13 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 		return nil, nil
 	}
 
-	var err error
-	if fs.AnyOf, err = parseComposition("anyOf"); err != nil {
+	if fs.AnyOf, err = parseComp("anyOf"); err != nil {
 		return fs, err
 	}
-	if fs.OneOf, err = parseComposition("oneOf"); err != nil {
+	if fs.OneOf, err = parseComp("oneOf"); err != nil {
 		return fs, err
 	}
-	if fs.AllOf, err = parseComposition("allOf"); err != nil {
+	if fs.AllOf, err = parseComp("allOf"); err != nil {
 		return fs, err
 	}
 
@@ -395,7 +432,7 @@ func buildBoolConstraints(opts map[string]string, required bool) (*BoolConstrain
 	return bc, nil
 }
 
-func buildArrayConstraints(opts map[string]string, required bool) (*ArrayConstraints, error) {
+func buildArrayConstraints(opts map[string]string, required bool, elemType reflect.Type) (*ArrayConstraints, error) {
 	ac := &ArrayConstraints{Required: required}
 
 	if v, ok := opts["minItems"]; ok {

@@ -43,6 +43,7 @@ type MapConstraints struct {
 	MinProperties *int // minimum number of keys
 	MaxProperties *int // maximum number of keys
 	Required      bool
+	Values        *FieldSchema // schema for map values (additionalProperties)
 }
 
 // FieldSchema represents the resolved schema for a single struct field.

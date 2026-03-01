@@ -238,23 +238,23 @@ func TestValidate_NilInput(t *testing.T) {
 
 func TestValidate_IntInput(t *testing.T) {
 	err := schema.Validate(42)
-	if err == nil {
-		t.Error("Validate(42) should return an error (not a struct)")
+	if err != nil {
+		t.Errorf("Validate(42) should now pass (any type supported): %v", err)
 	}
 }
 
 func TestValidate_StringInput(t *testing.T) {
 	err := schema.Validate("hello")
-	if err == nil {
-		t.Error("Validate(\"hello\") should return an error (not a struct)")
+	if err != nil {
+		t.Errorf("Validate(\"hello\") should now pass: %v", err)
 	}
 }
 
 func TestValidate_PtrToNonStruct(t *testing.T) {
 	n := 42
 	err := schema.Validate(&n)
-	if err == nil {
-		t.Error("Validate(&int) should return an error")
+	if err != nil {
+		t.Errorf("Validate(&int) should now pass: %v", err)
 	}
 }
 
@@ -262,17 +262,23 @@ func TestValidate_PtrToNonStruct(t *testing.T) {
 // 7. ToJSONSchema WITH NON-STRUCT TYPE PARAMETER
 // ============================================================
 
-func TestToJSONSchema_NonStruct_Errors(t *testing.T) {
-	_, err := schema.ToJSONSchema[string]()
-	if err == nil {
-		t.Error("ToJSONSchema[string]() should return an error")
+func TestToJSONSchema_NonStruct_String(t *testing.T) {
+	js, err := schema.ToJSONSchema[string]()
+	if err != nil {
+		t.Errorf("ToJSONSchema[string]() should now pass: %v", err)
+	}
+	if js["type"] != "string" {
+		t.Errorf("expected type 'string', got %v", js["type"])
 	}
 }
 
 func TestToJSONSchema_NonStruct_Int(t *testing.T) {
-	_, err := schema.ToJSONSchema[int]()
-	if err == nil {
-		t.Error("ToJSONSchema[int]() should return an error")
+	js, err := schema.ToJSONSchema[int]()
+	if err != nil {
+		t.Errorf("ToJSONSchema[int]() should now pass: %v", err)
+	}
+	if js["type"] != "integer" {
+		t.Errorf("expected type 'integer', got %v", js["type"])
 	}
 }
 
