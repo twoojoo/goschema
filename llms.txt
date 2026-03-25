@@ -70,7 +70,7 @@ type T struct {
 | Array | `required`, `minItems`, `maxItems`, `uniqueItems`, `items:*` |
 | Map | `required`, `minProperties`, `maxProperties` |
 | Object | `title`, `description`, `additionalProperties`, `dependentRequired:A=B\|C` |
-| Composition | `anyOf`, `oneOf`, `allOf`, `not`, `nullable` |
+| Composition | `anyOf`, `oneOf`, `allOf`, `not`, `nullable` — **inline primitive constraints only; struct references not supported** |
 
 Built-in formats: `email`, `uri`, `date`, `time`, `date-time`, `uuid`, `ipv4`, `ipv6`
 

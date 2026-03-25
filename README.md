@@ -299,8 +299,8 @@ type Product struct {
 | `minItems` / `maxItems` | Array / slice |
 | `uniqueItems` | Array / slice |
 | `items` | Array elements: `schema:"items:minLength=5"` |
-| `anyOf` / `oneOf` / `allOf` | Composition: `schema:"anyOf=S1;S2"` |
-| `not` | Negation: `schema:"not=S"` |
+| `anyOf` / `oneOf` / `allOf` | Composition: `schema:"anyOf=S1;S2"` — **inline primitive constraints only; cannot reference other structs** |
+| `not` | Negation: `schema:"not=S"` — **inline primitive constraints only** |
 | `nullable` | `schema:"nullable"` |
 | `minProperties` / `maxProperties` | Maps |
 | `dependentRequired` | `schema:"dependentRequired:A=B|C"` |
@@ -316,6 +316,7 @@ type Product struct {
 | `patternProperties` | Regex-based key patterns |
 | POSITIONAL `items` (tuple-like) | Positional validation for heterogeneous arrays |
 | Circular types | Unsupported (infinite recursion) |
+| `anyOf` / `oneOf` / `allOf` / `not` referencing structs | Sub-schemas must be inline primitive constraints (e.g. `minLength=5`); you cannot reference another Go struct type |
 
 ---
 
