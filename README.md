@@ -2,6 +2,8 @@
 
 A zero-dependency Go library for defining **JSON Schema constraints directly on Go structs** using struct tags — with utilities to validate, parse, and generate JSON Schema from your types.
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/twoojoo/goschema/schema.svg)](https://pkg.go.dev/github.com/twoojoo/goschema/schema)
+
 ```go
 type User struct {
     _ any `schema:"title=User,description=A registered user"`
@@ -124,10 +126,17 @@ schema.MustValidateJSON[User](data)
 
 ### `ToJSONSchema[T any]() (map[string]any, error)`
 
-Returns a **JSON Schema (draft-07)** compatible `map[string]any` for type `T`. The caller never imports `reflect`.
+Returns a **JSON Schema (draft-07)** compatible `map[string]any` for type `T`. Works with structs, slices, maps, and primitives.
 
 ```go
+// Struct — used as a component schema in OpenAPI
 js, err := schema.ToJSONSchema[User]()
+
+// List response — emits {"type":"array","items":{...User schema...}}
+js, err := schema.ToJSONSchema[[]User]()
+
+// Dictionary response — emits {"type":"object","additionalProperties":{...User schema...}}
+js, err := schema.ToJSONSchema[map[string]User]()
 ```
 
 ### `ToJSONSchemaIndent[T any](prefix, indent string) ([]byte, error)`
@@ -306,3 +315,27 @@ type Product struct {
 - **`json:",omitempty"`** — the JSON name is parsed correctly (`name,omitempty` → key `name`).
 - **Consistent Errors**: `ParseJSON` and `ValidateJSON` convert standard library JSON errors (like `UnmarshalTypeError` or `SyntaxError`) into `ValidationErrors` so you can handle them uniformly.
 - **`multipleOf` uses ratio-based float comparison** (`n/factor` near integer) to avoid `math.Mod` precision issues.
+
+---
+
+## Examples
+
+Runnable examples are in the [`examples/`](./examples/) directory:
+
+| Example | Description |
+|---|---|
+| [`examples/openapi_schema/`](./examples/openapi_schema/main.go) | Generate schemas for structs, slices (`[]User`), and maps (`map[string]User`) for OpenAPI specs |
+| [`examples/validation_errors/`](./examples/validation_errors/main.go) | Inspect and serialise `ValidationErrors`; handle JSON parse errors uniformly |
+| [`examples/strict_json/`](./examples/strict_json/main.go) | Strict JSON parsing with `additionalProperties=false` |
+
+```bash
+go run examples/openapi_schema/main.go
+go run examples/validation_errors/main.go
+go run examples/strict_json/main.go
+```
+
+---
+
+## Agent & LLM Integration
+
+This repo ships [`llms.txt`](./llms.txt) (a machine-readable summary following the [llms.txt spec](https://llmstxt.org)) and [`AGENTS.md`](./AGENTS.md) for AI-coding-tool context. These files help AI agents understand the library API without reading the full source.

@@ -1,0 +1,81 @@
+# goschema
+
+> A zero-dependency Go library for JSON Schema generation and validation via struct tags.
+
+## Summary
+
+`goschema` lets you annotate Go structs with `schema:""` tags to define JSON Schema constraints. The library provides:
+- **Runtime validation** (`Validate`, `ParseJSON`) of structs, slices, maps, and primitives
+- **JSON Schema emission** (`ToJSONSchema`) for draft-07 compatible maps/bytes
+- **Auto-defaults**: `ParseJSON[T]` fills zero-value fields from `default=` tags before validating
+- **Unified errors**: All errors (JSON syntax, type mismatch, constraint violation) return `ValidationErrors`
+
+## Package
+
+```
+import "github.com/twoojoo/goschema/schema"
+```
+
+## Key Types
+
+- `ValidationErrors []ValidationError` — list of all violations; implements `error` and `json.Marshaler`
+- `ValidationError { Field, Message string; Value any }` — single violation with dot-separated path
+- `FieldSchema` — internal resolved schema for one field (not normally used directly)
+- `ObjectSchema` — internal resolved schema for a struct (not normally used directly)
+
+## Public API
+
+```go
+// Validation
+schema.Validate(v any) error
+schema.MustValidate(v any)
+
+// JSON parse + validate
+schema.ParseJSON[T any](data []byte) (T, error)
+schema.ValidateJSON[T any](data []byte) error
+schema.MustParseJSON[T any](data []byte) T
+schema.MustValidateJSON[T any](data []byte)
+
+// JSON Schema generation (any Go type: struct, slice, map, primitive)
+schema.ToJSONSchema[T any]() (map[string]any, error)
+schema.ToJSONSchemaIndent[T any](prefix, indent string) ([]byte, error)
+schema.MustToJSONSchemaIndent[T any](prefix, indent string) []byte
+```
+
+## Tag Syntax
+
+Tags are comma-separated `key=value` pairs on the `schema:""` tag:
+
+```go
+Name  string `json:"name"  schema:"required,minLength=2,maxLength=50"`
+Email string `json:"email" schema:"required,format=email"`
+Age   int    `json:"age"   schema:"minimum=0,maximum=120"`
+Role  string `json:"role"  schema:"enum=admin|editor|viewer,default=viewer"`
+```
+
+Use a blank `_ any` field for struct-level metadata:
+```go
+type T struct {
+    _ any `schema:"title=T,description=...,additionalProperties=false"`
+}
+```
+
+## Constraints Summary
+
+| Category | Tags |
+|---|---|
+| String | `required`, `minLength`, `maxLength`, `pattern`, `format`, `enum`, `const`, `default` |
+| Numeric | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `const`, `default` |
+| Boolean | `const`, `default` |
+| Array | `required`, `minItems`, `maxItems`, `uniqueItems`, `items:*` |
+| Map | `required`, `minProperties`, `maxProperties` |
+| Object | `title`, `description`, `additionalProperties`, `dependentRequired:A=B\|C` |
+| Composition | `anyOf`, `oneOf`, `allOf`, `not`, `nullable` |
+
+Built-in formats: `email`, `uri`, `date`, `time`, `date-time`, `uuid`, `ipv4`, `ipv6`
+
+## Docs & Examples
+
+- [README.md](./README.md) — full tag reference and API docs
+- [examples/](./examples/) — runnable examples per use case
+- [pkg.go.dev](https://pkg.go.dev/github.com/twoojoo/goschema/schema) — Godoc

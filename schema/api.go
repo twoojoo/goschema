@@ -10,8 +10,17 @@ import (
 	"strings"
 )
 
-// Validate checks a value against its type's JSON Schema constraints.
-// It supports structs, slices, arrays, and maps.
+// Validate checks v against the JSON Schema constraints defined by its
+// `schema` struct tags. It accepts structs, pointers, slices, and maps.
+// Errors from all fields are collected and returned as [ValidationErrors].
+// Returns nil if all constraints pass.
+//
+//	err := schema.Validate(user)
+//	if ve, ok := err.(schema.ValidationErrors); ok {
+//	    for _, e := range ve {
+//	        fmt.Printf("[%s] %s\n", e.Field, e.Message)
+//	    }
+//	}
 func Validate(v any) error {
 	rv := reflect.ValueOf(v)
 	if !rv.IsValid() {
@@ -39,18 +48,29 @@ func Validate(v any) error {
 }
 
 // MustValidate is like [Validate] but panics on any validation failure.
-// Intended for init-time assertions and tests where a validation error is a
-// programming mistake rather than a runtime condition.
+// Useful for init-time assertions and hardcoded configs where a violation
+// is always a programming mistake, not a runtime condition.
+//
+//	var defaultCfg = Config{Env: "prod", MaxRetries: 3}
+//	func init() { schema.MustValidate(defaultCfg) }
 func MustValidate(v any) {
 	if err := Validate(v); err != nil {
 		panic("goschema: MustValidate failed: " + err.Error())
 	}
 }
 
-// ToJSONSchema returns the JSON Schema (draft-07 compatible) representation
-// of type T as a map. The caller never needs to import "reflect".
+// ToJSONSchema returns a JSON Schema (draft-07 compatible) map[string]any for
+// type T. It works for any Go type: structs, slices, maps, and primitives.
+// The caller never needs to import "reflect".
 //
+//	// Single struct
 //	js, err := schema.ToJSONSchema[User]()
+//
+//	// OpenAPI list response
+//	js, err := schema.ToJSONSchema[[]User]()
+//
+//	// OpenAPI dictionary response
+//	js, err := schema.ToJSONSchema[map[string]User]()
 func ToJSONSchema[T any]() (map[string]any, error) {
 	var zero T
 	t := reflect.TypeOf(zero)
@@ -90,11 +110,17 @@ func MustToJSONSchemaIndent[T any](prefix, indent string) []byte {
 	return b
 }
 
-// ParseJSON unmarshals JSON data into a value of type T and validates it against
-// the struct's `schema` tags. It is the idiomatic entry-point combining
-// json.Unmarshal, default-filling, and Validate in a single call.
+// ParseJSON unmarshals JSON data into a value of type T, fills any zero-value
+// fields from `schema:"default=..."` tags, then validates all constraints.
+// It is the idiomatic single-call entry-point replacing json.Unmarshal + Validate.
+//
+// All errors — JSON syntax, type mismatch, unknown fields, and constraint
+// violations — are returned as [ValidationErrors] for uniform handling.
 //
 //	user, err := schema.ParseJSON[User](data)
+//	if ve, ok := err.(schema.ValidationErrors); ok {
+//	    // handle structured errors
+//	}
 func ParseJSON[T any](data []byte) (T, error) {
 	var v T
 
@@ -128,20 +154,27 @@ func ParseJSON[T any](data []byte) (T, error) {
 	return v, nil
 }
 
-// Parse is an alias for ParseJSON.
-// Deprecated: use ParseJSON instead.
+// Parse is an alias for [ParseJSON].
+//
+// Deprecated: use [ParseJSON] instead.
 func Parse[T any](data []byte) (T, error) {
 	return ParseJSON[T](data)
 }
 
-// ValidateJSON unmarshals JSON data into type T and validates it,
-// but discards the resulting object. Returns error if unmarshal or validation fails.
+// ValidateJSON unmarshals JSON data into type T, applies defaults, validates
+// all constraints, and then discards the value. Returns nil on success,
+// or a [ValidationErrors] on any failure.
+//
+//	if err := schema.ValidateJSON[User](data); err != nil { ... }
 func ValidateJSON[T any](data []byte) error {
 	_, err := ParseJSON[T](data)
 	return err
 }
 
 // MustParseJSON is like [ParseJSON] but panics on any error.
+// Useful for hardcoded test payloads that must be valid.
+//
+//	cfg := schema.MustParseJSON[Config]([]byte(`{"env":"prod"}`))
 func MustParseJSON[T any](data []byte) T {
 	v, err := ParseJSON[T](data)
 	if err != nil {
@@ -150,13 +183,16 @@ func MustParseJSON[T any](data []byte) T {
 	return v
 }
 
-// MustParse is an alias for MustParseJSON.
-// Deprecated: use MustParseJSON instead.
+// MustParse is an alias for [MustParseJSON].
+//
+// Deprecated: use [MustParseJSON] instead.
 func MustParse[T any](data []byte) T {
 	return MustParseJSON[T](data)
 }
 
 // MustValidateJSON is like [ValidateJSON] but panics on error.
+//
+//	schema.MustValidateJSON[User](data)
 func MustValidateJSON[T any](data []byte) {
 	if err := ValidateJSON[T](data); err != nil {
 		panic("goschema: MustValidateJSON failed: " + err.Error())
