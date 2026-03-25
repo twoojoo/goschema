@@ -1,12 +1,21 @@
-# goschema
+# goschema — Go JSON Schema validation & generation via struct tags
 
-A zero-dependency Go library for defining **JSON Schema constraints directly on Go structs** using struct tags — with utilities to validate, parse, and generate JSON Schema from your types.
+**goschema** is a zero-dependency Go library that turns struct tags into a full JSON Schema (draft-07) validation, parsing, and generation engine.
 
 [![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/twoojoo/goschema/main/badges/tests.json)](https://github.com/twoojoo/goschema/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/twoojoo/goschema/main/badges/coverage.json)](https://github.com/twoojoo/goschema/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/twoojoo/goschema/schema.svg)](https://pkg.go.dev/github.com/twoojoo/goschema/schema)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/twoojoo/goschema)](https://go.dev)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](./go.mod)
+
+Define constraints once on your Go structs — validate incoming JSON, fill defaults, and export OpenAPI-compatible schemas for free.
+
+- ✅ **Struct-tag validation** — `required`, `minLength`, `format=email`, `enum`, `pattern`, … on any Go field
+- ✅ **JSON parse + validate** — `ParseJSON[T](data)` replaces `json.Unmarshal` + a hand-written validator
+- ✅ **JSON Schema generation** — `ToJSONSchema[T]()` emits draft-07 maps for structs, slices (`[]User`), and maps (`map[string]User`)
+- ✅ **OpenAPI / Swagger ready** — use the emitted schema directly as a component or response definition
+- ✅ **Zero external dependencies** — pure stdlib, no reflection wrappers, no code generation
+- ✅ **Go generics** — type-safe API, no `interface{}` casting on your side
 
 ```go
 type User struct {
