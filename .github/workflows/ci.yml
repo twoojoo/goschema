@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write  # needed to push badge JSON updates
+
+jobs:
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # ── Run tests ────────────────────────────────────────────────────────────
+      - name: Run tests
+        run: |
+          go test -v -coverprofile=coverage.out ./schema/... 2>&1 | tee test_output.txt
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+      # ── Extract test count ───────────────────────────────────────────────────
+      - name: Extract test count
+        run: |
+          PASS=$(grep -c "^--- PASS:" test_output.txt || true)
+          FAIL=$(grep -c "^--- FAIL:" test_output.txt || true)
+          echo "PASS_COUNT=$PASS" >> $GITHUB_ENV
+          echo "FAIL_COUNT=$FAIL" >> $GITHUB_ENV
+          echo "Tests: $PASS passed, $FAIL failed"
+
+      # ── Extract coverage ─────────────────────────────────────────────────────
+      - name: Extract coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $3}' | tr -d '%')
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          echo "Coverage: ${COVERAGE}%"
+
+      # ── Write badge JSON files ───────────────────────────────────────────────
+      - name: Write badge JSON
+        run: |
+          mkdir -p badges
+
+          # Choose colour based on test result
+          if [ "$FAIL_COUNT" -gt 0 ] || [ "$EXIT_CODE" != "0" ]; then
+            TEST_COLOR="red"
+            TEST_MSG="${PASS_COUNT} passed, ${FAIL_COUNT} failed"
+          else
+            TEST_COLOR="brightgreen"
+            TEST_MSG="${PASS_COUNT} passed"
+          fi
+
+          cat > badges/tests.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "tests",
+            "message": "${TEST_MSG}",
+            "color": "${TEST_COLOR}"
+          }
+          EOF
+
+          # Choose colour based on coverage
+          COVERAGE_INT=$(echo "$COVERAGE" | cut -d. -f1)
+          if [ "$COVERAGE_INT" -ge 80 ]; then
+            COV_COLOR="brightgreen"
+          elif [ "$COVERAGE_INT" -ge 60 ]; then
+            COV_COLOR="yellow"
+          else
+            COV_COLOR="red"
+          fi
+
+          cat > badges/coverage.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "coverage",
+            "message": "${COVERAGE}%",
+            "color": "${COV_COLOR}"
+          }
+          EOF
+
+          echo "--- badges/tests.json ---"
+          cat badges/tests.json
+          echo "--- badges/coverage.json ---"
+          cat badges/coverage.json
+
+      # ── Commit badge updates (only on push to main, not PRs) ─────────────────
+      - name: Commit badge updates
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add badges/tests.json badges/coverage.json
+          # Only commit if there are actual changes to the badge files
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update badges [skip ci]"
+            git push
+          else
+            echo "Badges unchanged — skipping commit."
+          fi
+
+      # ── Fail the job if tests failed ─────────────────────────────────────────
+      - name: Fail on test errors
+        if: env.EXIT_CODE != '0'
+        run: exit 1
