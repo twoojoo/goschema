@@ -43,7 +43,7 @@ js, _  := schema.ToJSONSchema[User]()       // derive JSON Schema map
 go get github.com/twoojoo/goschema
 ```
 
-Requires **Go 1.21+** (generics). **Zero external dependencies.**
+Requires **Go 1.22+** (generics, range-over-integer). **Zero external dependencies.**
 
 ---
 
