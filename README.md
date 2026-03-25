@@ -5,6 +5,7 @@
 [![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/twoojoo/goschema/main/badges/tests.json)](https://github.com/twoojoo/goschema/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/twoojoo/goschema/main/badges/coverage.json)](https://github.com/twoojoo/goschema/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/twoojoo/goschema/schema.svg)](https://pkg.go.dev/github.com/twoojoo/goschema/schema)
+[![Latest Release](https://img.shields.io/github/v/release/twoojoo/goschema)](https://github.com/twoojoo/goschema/releases/latest)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/twoojoo/goschema)](https://go.dev)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](./go.mod)
 
