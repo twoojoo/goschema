@@ -78,6 +78,10 @@ type FieldSchema struct {
 	OneOf []FieldSchema
 	AllOf []FieldSchema
 	Not   *FieldSchema
+
+	// Extensions holds x- prefixed OpenAPI/Swagger extension fields.
+	// They are emitted as-is in the JSON Schema output.
+	Extensions map[string]string
 }
 
 // ObjectSchema is the fully resolved schema for a struct type.
@@ -90,4 +94,7 @@ type ObjectSchema struct {
 	// Advanced keywords
 	AdditionalProperties *bool               // nil means true (default)
 	DependentRequired    map[string][]string // property dependencies
+
+	// Extensions holds x- prefixed OpenAPI/Swagger extension fields emitted by the struct sentinel.
+	Extensions map[string]string
 }

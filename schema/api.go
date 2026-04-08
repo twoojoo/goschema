@@ -8,7 +8,25 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"sync"
 )
+
+// customFormats is the registry for user-defined format validators.
+// Keys are format names (without any prefix); values are func(string) bool.
+var customFormats sync.Map
+
+// RegisterFormat registers a custom format validator that will be applied
+// whenever a field carries schema:"format=name".
+// The validator receives the field value as a string and returns true if valid.
+// Custom formats are also emitted as-is in the JSON Schema output, which is
+// fully compatible with JSON Schema draft-07 and OpenAPI/Swagger specs.
+//
+//	schema.RegisterFormat("phone", func(v string) bool {
+//	    return regexp.MustCompile(`^\+?[0-9\s\-]{7,15}$`).MatchString(v)
+//	})
+func RegisterFormat(name string, validate func(value string) bool) {
+	customFormats.Store(name, validate)
+}
 
 // Validate checks v against the JSON Schema constraints defined by its
 // `schema` struct tags. It accepts structs, pointers, slices, and maps.
@@ -279,6 +297,9 @@ func objectSchemaToJSON(obj *ObjectSchema) map[string]any {
 	if len(obj.DependentRequired) > 0 {
 		result["dependentRequired"] = obj.DependentRequired
 	}
+	for k, v := range obj.Extensions {
+		result[k] = v
+	}
 	return result
 }
 
@@ -325,6 +346,9 @@ func fieldSchemaToJSON(fs FieldSchema) map[string]any {
 	}
 	if len(fs.AllOf) > 0 {
 		m["allOf"] = compositionToJSON(fs.AllOf)
+	}
+	for k, v := range fs.Extensions {
+		m[k] = v
 	}
 
 	return m

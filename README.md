@@ -17,6 +17,9 @@ Define constraints once on your Go structs — validate incoming JSON, fill defa
 - ✅ **OpenAPI / Swagger ready** — use the emitted schema directly as a component or response definition
 - ✅ **Zero external dependencies** — pure stdlib, no reflection wrappers, no code generation
 - ✅ **Go generics** — type-safe API, no `interface{}` casting on your side
+- ✅ **`time.Time` support** — automatically emits `format: date-time`; validates correctly post-unmarshal
+- ✅ **Custom formats** — `RegisterFormat("phone", fn)` for domain-specific validators
+- ✅ **OpenAPI extensions** — attach `x-` fields to any struct or field via `schema:"x-key=value"`
 
 ```go
 type User struct {
@@ -169,6 +172,55 @@ Like `ToJSONSchemaIndent` but panics on error.
 ```go
 b := schema.MustToJSONSchemaIndent[User]("", "  ")
 ```
+
+---
+
+### `RegisterFormat(name string, validate func(value string) bool)`
+
+Registers a custom format validator. The function is called whenever a string field has `schema:"format=name"`. The format name is also emitted in `ToJSONSchema` output, making it fully OpenAPI-compatible (custom formats are valid in draft-07 and OpenAPI 3.x — validators that don't recognise the name simply skip it).
+
+```go
+schema.RegisterFormat("phone", func(v string) bool {
+    matched, _ := regexp.MatchString(`^\+?[0-9\s\-]{7,15}$`, v)
+    return matched
+})
+
+type Contact struct {
+    Phone string `json:"phone" schema:"format=phone"`
+}
+```
+
+---
+
+### `time.Time` support
+
+Fields of type `time.Time` are automatically mapped to `{ "type": "string", "format": "date-time" }` in the generated schema — no tag needed. Validation is delegated to `encoding/json` which guarantees RFC 3339 compliance.
+
+```go
+type Event struct {
+    Name      string    `json:"name"       schema:"required"`
+    CreatedAt time.Time `json:"created_at"`  // → type: string, format: date-time
+}
+```
+
+---
+
+### Schema Extensions (`x-` fields)
+
+Any tag key prefixed with `x-` is collected and emitted verbatim in the JSON Schema output. This is the standard mechanism for OpenAPI vendor extensions and is fully compatible with Swagger UI, Redoc, and most code-gen tools.
+
+```go
+type Product struct {
+    // Struct-level extensions go in the sentinel field
+    _ any `schema:"title=Product,x-internal=true,x-logo=https://example.com/logo.png"`
+
+    // Field-level extensions
+    Name  string  `json:"name"  schema:"required,x-example=Widget"`
+    Price float64 `json:"price" schema:"minimum=0,x-currency=USD"`
+}
+```
+
+Emits at the object root: `"x-internal": "true"`, `"x-logo": "..."`. Emits on each field: `"x-example": "Widget"`, `"x-currency": "USD"`.
 
 ---
 

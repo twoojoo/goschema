@@ -197,7 +197,12 @@ func validateField(v reflect.Value, fs FieldSchema, path string) ValidationError
 
 	switch fs.Type {
 	case "string":
-		errs = append(errs, validateString(v, fs.String, path)...)
+		// time.Time fields are emitted as `type: string, format: date-time` in the schema
+		// but are represented as a struct in Go after json.Unmarshal. Skip string
+		// validation for them — encoding/json already guarantees RFC3339 compliance.
+		if v.Type() != timeType {
+			errs = append(errs, validateString(v, fs.String, path)...)
+		}
 	case "integer", "number":
 		errs = append(errs, validateNumber(v, fs.Number, path)...)
 	case "boolean":
@@ -283,6 +288,14 @@ func validateString(v reflect.Value, c *StringConstraints, path string) Validati
 	if c.Format != nil {
 		if re, ok := formatPatterns[*c.Format]; ok {
 			if !re.MatchString(s) {
+				errs = append(errs, ValidationError{
+					Field:   path,
+					Message: fmt.Sprintf("must be a valid %s", *c.Format),
+					Value:   s,
+				})
+			}
+		} else if fn, ok := customFormats.Load(*c.Format); ok {
+			if !fn.(func(string) bool)(s) {
 				errs = append(errs, ValidationError{
 					Field:   path,
 					Message: fmt.Sprintf("must be a valid %s", *c.Format),

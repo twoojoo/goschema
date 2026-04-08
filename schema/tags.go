@@ -5,7 +5,17 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
+
+// schemaCache stores fully-built FieldSchemas keyed by reflect.Type.
+// Because types and their struct tags are immutable in Go, the schema for a
+// given reflect.Type is always identical — we only need to build it once.
+var schemaCache sync.Map
+
+// timeType is the reflect.Type for time.Time, used for automatic format detection.
+var timeType = reflect.TypeOf(time.Time{})
 
 // parseObjectSchema builds an ObjectSchema by inspecting the reflect.Type of a
 // struct. It is called recursively for nested struct fields.
@@ -48,7 +58,16 @@ func parseObjectSchema(t reflect.Type) (*ObjectSchema, error) {
 					obj.DependentRequired[sourceField] = requiredFields
 				}
 			}
-			continue
+			// Parse x- extension fields from the sentinel.
+		for k, v := range opts {
+			if strings.HasPrefix(k, "x-") {
+				if obj.Extensions == nil {
+					obj.Extensions = make(map[string]string)
+				}
+				obj.Extensions[k] = v
+			}
+		}
+		continue
 		}
 
 		// Skip unexported fields.
@@ -90,6 +109,9 @@ func jsonFieldName(f reflect.StructField) string {
 
 // reflectTypeToSchema converts a reflect.Type to a base FieldSchema without
 // applying any tag-based constraints (other than recursion into structs/slices).
+// Primitive types (string, int, float, bool, time.Time) are cached by reflect.Type
+// since their schemas are immutable. Slices, maps, and structs are NOT cached because
+// buildFieldSchema mutates their constraint pointers with tag-derived values.
 func reflectTypeToSchema(t reflect.Type) (FieldSchema, error) {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -97,20 +119,52 @@ func reflectTypeToSchema(t reflect.Type) (FieldSchema, error) {
 
 	fs := FieldSchema{}
 
+	// time.Time is the most common non-primitive Go type. Map it directly to
+	// JSON Schema { "type": "string", "format": "date-time" } without forcing
+	// the caller to add a format tag. Cache it since StringConstraints is never mutated.
+	if t == timeType {
+		if cached, ok := schemaCache.Load(t); ok {
+			return cached.(FieldSchema), nil
+		}
+		format := "date-time"
+		fs.Type = "string"
+		fs.String = &StringConstraints{Format: &format}
+		schemaCache.Store(t, fs)
+		return fs, nil
+	}
+
 	switch t.Kind() {
 	case reflect.String:
+		// Cache hit for primitive types whose schemas are never mutated by buildFieldSchema.
+		if cached, ok := schemaCache.Load(t); ok {
+			return cached.(FieldSchema), nil
+		}
 		fs.Type = "string"
 		fs.String = &StringConstraints{}
+		schemaCache.Store(t, fs)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if cached, ok := schemaCache.Load(t); ok {
+			return cached.(FieldSchema), nil
+		}
 		fs.Type = "integer"
 		fs.Number = &NumberConstraints{}
+		schemaCache.Store(t, fs)
 	case reflect.Float32, reflect.Float64:
+		if cached, ok := schemaCache.Load(t); ok {
+			return cached.(FieldSchema), nil
+		}
 		fs.Type = "number"
 		fs.Number = &NumberConstraints{}
+		schemaCache.Store(t, fs)
 	case reflect.Bool:
+		if cached, ok := schemaCache.Load(t); ok {
+			return cached.(FieldSchema), nil
+		}
 		fs.Type = "boolean"
 		fs.Bool = &BoolConstraints{}
+		schemaCache.Store(t, fs)
 	case reflect.Slice, reflect.Array:
+		// NOT cached — buildFieldSchema overwrites Array.Items with tag-derived values.
 		fs.Type = "array"
 		itemSchema, err := reflectTypeToSchema(t.Elem())
 		if err != nil {
@@ -118,6 +172,7 @@ func reflectTypeToSchema(t reflect.Type) (FieldSchema, error) {
 		}
 		fs.Array = &ArrayConstraints{Items: &itemSchema}
 	case reflect.Map:
+		// NOT cached — buildFieldSchema overwrites Map.Values.
 		fs.Type = "object"
 		valueSchema, err := reflectTypeToSchema(t.Elem())
 		if err != nil {
@@ -125,6 +180,7 @@ func reflectTypeToSchema(t reflect.Type) (FieldSchema, error) {
 		}
 		fs.Map = &MapConstraints{Values: &valueSchema}
 	case reflect.Struct:
+		// NOT cached — buildFieldSchema may alter nested field pointers.
 		fs.Type = "object"
 		obj, err := parseObjectSchema(t)
 		if err != nil {
@@ -170,9 +226,14 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 	// Override/augment base schema with tag constraints.
 	switch fs.Type {
 	case "string":
+		baseFormat := fs.String.Format // may be set by reflectTypeToSchema (e.g. time.Time → "date-time")
 		sc, err := buildStringConstraints(opts, fs.Required)
 		if err != nil {
 			return fs, err
+		}
+		// Restore the base format if the tag didn't specify one explicitly.
+		if sc.Format == nil && baseFormat != nil {
+			sc.Format = baseFormat
 		}
 		fs.String = sc
 	case "integer", "number":
@@ -249,6 +310,16 @@ func buildFieldSchema(f reflect.StructField, jsonName string) (FieldSchema, erro
 	}
 	if fs.AllOf, err = parseComp("allOf"); err != nil {
 		return fs, err
+	}
+
+	// Collect x- extension fields.
+	for k, v := range opts {
+		if strings.HasPrefix(k, "x-") {
+			if fs.Extensions == nil {
+				fs.Extensions = make(map[string]string)
+			}
+			fs.Extensions[k] = v
+		}
 	}
 
 	return fs, nil
